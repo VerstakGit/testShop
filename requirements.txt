@@ -19,6 +19,8 @@ pycparser==2.20
 pyparsing==2.4.7
 pytest==6.2.2
 pytest-aiohttp==0.3.0
+python-dateutil==2.8.1
+six==1.15.0
 toml==0.10.2
 typing-extensions==3.7.4.3
 yarl==1.6.3

@@ -46,14 +46,14 @@ class Courier:
         cur_weight = 0
         cur_orders = []
         for row in rows:
-            order = Order(row[0], row[1], row[2], row[3].split(','), row[4], row[5])
+            order = Order(row[0], row[1], row[2], row[3].split(','), row[4], row[5], row[6])
             cur_weight += order.weight
             cur_orders.append(order)
 
         cur.execute('SELECT * FROM orders WHERE courier_id is null and complete == 0')
         rows = cur.fetchall()
         for row in rows:
-            order = Order(row[0], row[1], row[2], row[3].split(','), None, row[5])
+            order = Order(row[0], row[1], row[2], row[3].split(','), None, row[5], row[6])
             if order.weight + cur_weight <= max_weight[self.type] and order.region in self.regions and check_delivery_time(self.working_hours, order.delivery_hours):
                 cur_weight += order.weight
                 cur_orders.append(order)
@@ -66,7 +66,7 @@ class Courier:
         cur_weight = 0
         excess_orders = []
         for row in rows:
-            order = Order(row[0], row[1], row[2], row[3].split(','), row[4], row[5])
+            order = Order(row[0], row[1], row[2], row[3].split(','), row[4], row[5], row[6])
             if order.weight + cur_weight <= max_weight[self.type] and order.region in self.regions and check_delivery_time(self.working_hours, order.delivery_hours):
                 cur_weight += order.weight
             else:

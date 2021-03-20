@@ -3,7 +3,9 @@ from courier import Courier
 from courier import get_courier
 from order import Order
 from order import get_order
-
+import time
+import datetime
+from dateutil.parser import parse
 
 salary = {"foot": 2, "bike": 5, "car": 9}
 
@@ -16,9 +18,9 @@ async def courier_info(request):
     sum_salary = courier.delivery_count * 500 * salary[courier.type]
     min_time = courier.get_min_average_delivery_time(request.app['db'])
     if min_time is None:
-        rating = 0
+        return web.Response(status=400)
     else:
-        rating = (60*60 - min(min_time, 60*60))/(60*60)*5
+        rating = (60 * 60 - min(min_time, 60 * 60)) / (60 * 60) * 5
     return web.json_response(status=200, data={"courier_id": courier.id, "courier_type": courier.type,
                                                "regions": courier.regions, "working_hours": courier.working_hours,
                                                "rating": rating, "earnings": sum_salary})
@@ -28,26 +30,30 @@ async def complete_orders(request):
     json = await request.json()
     courier_id = 0
     order_id = 0
+    complete_time = 0
     for k, v in json.items():
         if k == "courier_id" and type(v) is int and v > 0:
             courier_id = v
         elif k == "order_id" and type(v) is int and v > 0:
             order_id = v
+        elif k == "complete_time" and type(v) is str:
+            complete_time = parse(v)
         else:
             return web.Response(status=400)
-    if courier_id == 0 or order_id == 0:
+    if courier_id == 0 or order_id == 0 or complete_time == 0:
         return web.Response(status=400)
     order = get_order(order_id, request.app['db'])
     if order is None or order.courier_id != courier_id:
         return web.Response(status=400)
     if order.complete == 0:
-        order.set_complete(request.app['db'])
+        order.set_complete(request.app['db'], complete_time)
     return web.json_response(status=200, data={"order_id": order.id})
 
 
 async def assign_orders(request):
     json = await request.json()
     cur_orders = []
+    assign_time = int(time.time())
     for k, v in json.items():
         if k == "courier_id" and type(v) is int and v > 0:
             courier = get_courier(v, request.app['db'])
@@ -56,11 +62,15 @@ async def assign_orders(request):
             else:
                 cur_orders = courier.get_compatible_orders(request.app['db'])
                 for order in cur_orders:
-                    order.set_courier(request.app['db'], courier.id)
+                    if order.assign_time is not None:
+                        assign_time = order.assign_time
+                    order.set_courier(request.app['db'], courier.id, assign_time)
                 courier.increase_delivery_count(request.app['db'])
         else:
             return web.Response(status=400)
-    return web.json_response(status=200, data={"orders": [{"id": order.id} for order in cur_orders]})
+    return web.json_response(status=200,
+                             data={"orders": [{"id": order.id} for order in cur_orders],
+                                   "assign_time": datetime.datetime.fromtimestamp(assign_time, tz=datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")})
 
 
 async def orders(request):
@@ -70,7 +80,8 @@ async def orders(request):
     for k, v in json.items():
         if k == "data":
             for obj in v:
-                order = Order(obj.get("order_id"), obj.get("weight"), obj.get("region"), obj.get("delivery_hours"), None, 0)
+                order = Order(obj.get("order_id"), obj.get("weight"), obj.get("region"), obj.get("delivery_hours"),
+                              None, 0, 0)
                 incorrect = False
                 for key, val in obj.items():
                     if key == "order_id" and type(val) is int and val > 0:
@@ -127,7 +138,8 @@ async def couriers(request):
     for k, v in json.items():
         if k == "data":
             for obj in v:
-                courier = Courier(obj.get("courier_id"), obj.get("courier_type"), obj.get("regions"), obj.get("working_hours"), 0)
+                courier = Courier(obj.get("courier_id"), obj.get("courier_type"), obj.get("regions"),
+                                  obj.get("working_hours"), 0)
                 incorrect = False
                 for key, val in obj.items():
                     if key == "courier_id" and type(val) is int and val > 0:
@@ -136,7 +148,8 @@ async def couriers(request):
                         courier.type = val
                     elif key == "regions" and type(val) is list and all(type(x) is int and x > 0 for x in val):
                         courier.regions = val
-                    elif key == "working_hours" and type(val) is list and all(type(x) is str for x in val) and len(val) <= 3:
+                    elif key == "working_hours" and type(val) is list and all(type(x) is str for x in val) and len(
+                            val) <= 3:
                         courier.working_hours = val
                     else:
                         incorrect = True

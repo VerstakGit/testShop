@@ -1,8 +1,6 @@
-from aiohttp import web
-from handlers import couriers
 from main import create_application
-
-from courier import Courier
+import datetime
+import time
 
 
 def reset_db(db):
@@ -180,7 +178,9 @@ async def test_orders_assign(aiohttp_client, loop):
         assert resp.status == test['final_status']
         if test['final_status'] == 200:
             json = await resp.json()
-            assert json == test['final_resp']
+            assert json["orders"] == test['final_resp']["orders"]
+            assert datetime.datetime.strptime(json["assign_time"], "%Y-%m-%dT%H:%M:%S.%fZ").astimezone(
+                datetime.timezone.utc) < datetime.datetime.now(tz=datetime.timezone.utc)
 
 
 async def test_orders_complete(aiohttp_client, loop):
@@ -194,7 +194,8 @@ async def test_orders_complete(aiohttp_client, loop):
                                     {"order_id": 2, "weight": 10, "region": 2,
                                      "delivery_hours": ["12:00-15:00", "18:00-23:00"]}]},
             "assign_body": {"courier_id": 1},
-            "complete_bodies": [{"courier_id": 1, "order_id": 1}, {"courier_id": 1, "order_id": 1},
+            "complete_bodies": [{"courier_id": 1, "order_id": 1, "complete_time": "2021-03-21T14:22:11.21Z"},
+                                {"courier_id": 1, "order_id": 1, "complete_time": "2021-03-21T14:22:11.21Z"},
                                 {"courier_id": 1, "order_id": 2}, {"courier_id": 2, "order_id": 1}],
             "final_statuses": [200, 200, 400, 400],
             "final_resps": [{"order_id": 1}, {"order_id": 1}, {}, {}],
@@ -213,8 +214,10 @@ async def test_orders_complete(aiohttp_client, loop):
                                      "delivery_hours": ["09:00-10:30", "19:00-23:00"]},
                                     {"order_id": 5, "weight": 1, "region": 1, "delivery_hours": ["07:00-14:00"]}]},
             "assign_body": {"courier_id": 1},
-            "complete_bodies": [{"courier_id": 1, "order_id": 1}, {"courier_id": 1, "order_id": 2},
-                                {"courier_id": 1, "order_id": 3}, {"courier_id": 1, "order_id": 4},
+            "complete_bodies": [{"courier_id": 1, "order_id": 1, "complete_time": "2021-03-21T15:22:11.21Z"},
+                                {"courier_id": 1, "order_id": 2},
+                                {"courier_id": 1, "order_id": 3, "complete_time": "2021-03-21T16:22:11.21Z"},
+                                {"courier_id": 1, "order_id": 4},
                                 {"courier_id": 1, "order_id": 5}, {"courier_id": 2, "order_id": 1},
                                 {"courier_id": 2, "order_id": 2}],
             "final_statuses": [200, 400, 200, 400, 400, 400, 400],
@@ -249,11 +252,14 @@ async def test_courier_info(aiohttp_client, loop):
                                     {"order_id": 2, "weight": 10, "region": 2,
                                      "delivery_hours": ["12:00-15:00", "18:00-23:00"]}]},
             "assign_body": {"courier_id": 1},
-            "complete_bodies": [{"courier_id": 1, "order_id": 1}],
+            "complete_bodies": [{"courier_id": 1, "order_id": 1,
+                                 "complete_time": datetime.datetime.fromtimestamp(time.time()+7200,
+                                                                                  tz=datetime.timezone.utc).strftime(
+                                     "%Y-%m-%dT%H:%M:%S.%fZ")}],
             "courier_ids": [1, 2],
             "final_statuses": [200, 400],
             "final_resps": [
-                {"courier_id": 1, "courier_type": "foot", "regions": [1], "working_hours": ["11:00-18:00"], "rating": 5,
+                {"courier_id": 1, "courier_type": "foot", "regions": [1], "working_hours": ["11:00-18:00"], "rating": 0,
                  "earnings": 1000}, {}],
         },
         {
@@ -270,14 +276,19 @@ async def test_courier_info(aiohttp_client, loop):
                                      "delivery_hours": ["09:00-10:30", "19:00-23:00"]},
                                     {"order_id": 5, "weight": 1, "region": 1, "delivery_hours": ["07:00-14:00"]}]},
             "assign_body": {"courier_id": 1},
-            "complete_bodies": [{"courier_id": 1, "order_id": 1}, {"courier_id": 1, "order_id": 3}],
+            "complete_bodies": [{"courier_id": 1, "order_id": 1,
+                                 "complete_time": datetime.datetime.fromtimestamp(time.time()+20,
+                                                                                  tz=datetime.timezone.utc).strftime(
+                                     "%Y-%m-%dT%H:%M:%S.%fZ")},
+                                {"courier_id": 1, "order_id": 3,
+                                 "complete_time": datetime.datetime.fromtimestamp(time.time()+10,
+                                                                                  tz=datetime.timezone.utc).strftime(
+                                     "%Y-%m-%dT%H:%M:%S.%fZ")}],
             "courier_ids": [1, 2],
-            "final_statuses": [200, 200],
+            "final_statuses": [200, 400],
             "final_resps": [
-                {"courier_id": 1, "courier_type": "bike", "regions": [1], "working_hours": ["11:00-18:00"], "rating": 5,
-                 "earnings": 2500},
-                {"courier_id": 2, "courier_type": "car", "regions": [2, 3], "working_hours": ["09:00-18:00"],
-                 "rating": 0, "earnings": 0}],
+                {"courier_id": 1, "courier_type": "bike", "regions": [1], "working_hours": ["11:00-18:00"], "rating1": 5, "rating2": 4,
+                 "earnings": 2500}],
         }
     ]
 
@@ -295,6 +306,14 @@ async def test_courier_info(aiohttp_client, loop):
         for i in range(len(test['courier_ids'])):
             resp = await client.get(f'/couriers/{test["courier_ids"][i]}')
             assert resp.status == test["final_statuses"][i]
-            if test["final_statuses"] == 200:
+            if test["final_statuses"][i] == 200:
                 json = await resp.json()
-                assert json == test["final_resps"][i]
+                assert json["courier_id"] == test["final_resps"][i]["courier_id"]
+                assert json["courier_type"] == test["final_resps"][i]["courier_type"]
+                assert json["regions"] == test["final_resps"][i]["regions"]
+                assert json["working_hours"] == test["final_resps"][i]["working_hours"]
+                assert json["earnings"] == test["final_resps"][i]["earnings"]
+                if "rating" in test["final_resps"][i]:
+                    assert json["rating"] == test["final_resps"][i]["rating"]
+                else:
+                    assert test["final_resps"][i]["rating2"] < json["rating"] <= test["final_resps"][i]["rating1"]
